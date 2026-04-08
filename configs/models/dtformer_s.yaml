@@ -1,0 +1,32 @@
+# DTFormer-S model configuration
+# DTFormer-S 模型配置
+
+model:
+  backbone: DFormerv2_S
+  pretrained: checkpoints/pretrained/DFormerv2_Small_pretrained.pth
+
+  # Backbone architecture
+  embed_dims: [64, 128, 256, 512]
+  depths: [3, 4, 18, 4]
+  num_heads: [4, 4, 8, 16]
+  drop_path_rate: 0.25
+
+  # Text guidance
+  text_dim: 512
+  text_encoder: clip           # Only CLIP (via open_clip) is supported
+  text_encoder_name: null      # null -> ViT-B-16 openai
+  text_template_set: clip
+  max_templates_per_label: 3
+
+  # Semantic alignment: encoder side
+  # Superpower is the default — SSA-lite per-block in backbone
+  sam_enc_stages: [1, 2, 3]   # 0-indexed stages; stage 0 reserved for ablation
+
+  # Semantic alignment: decoder side
+  sam_dec_stages: [1, 2, 3]
+  sam_use_topk: false          # disabled for image_specific mode
+  sam_top_m: 5
+
+  # Decoder
+  decoder: HSGHead
+  decoder_embed_dim: 512
