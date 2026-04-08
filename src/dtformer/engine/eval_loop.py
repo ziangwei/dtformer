@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import List, Optional, Sequence
+import os
+from pathlib import Path
+from typing import Dict, List, Optional, Sequence
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -104,6 +107,63 @@ def _infer_once(
 
 
 # ---------------------------------------------------------------------------
+# Prediction visualization
+# ---------------------------------------------------------------------------
+def save_vis_prediction(
+    pred: torch.Tensor,
+    label: torch.Tensor,
+    save_path: str,
+    palette: Optional[np.ndarray] = None,
+    ignore_index: int = 255,
+) -> None:
+    """Save a side-by-side prediction vs. ground truth visualization.
+
+    Args:
+        pred: ``(H, W)`` integer class map (predicted).
+        label: ``(H, W)`` integer class map (ground truth).
+        save_path: Output file path.
+        palette: ``(num_classes, 3)`` RGB palette. If ``None``, uses random.
+        ignore_index: Label value to treat as ignore (shown as black).
+    """
+    from PIL import Image
+
+    pred_np = pred.cpu().numpy().astype(np.uint8)
+    label_np = label.cpu().numpy().astype(np.uint8)
+
+    if palette is not None:
+        flat_pal = palette.flatten().tolist()
+    else:
+        rng = np.random.RandomState(42)
+        flat_pal = rng.randint(0, 256, size=768).tolist()
+
+    # Set ignore pixels to black
+    flat_pal_arr = list(flat_pal)
+    if ignore_index < 256:
+        idx3 = ignore_index * 3
+        if idx3 + 2 < len(flat_pal_arr):
+            flat_pal_arr[idx3] = 0
+            flat_pal_arr[idx3 + 1] = 0
+            flat_pal_arr[idx3 + 2] = 0
+
+    pred_img = Image.fromarray(pred_np, mode="P")
+    pred_img.putpalette(flat_pal_arr)
+
+    label_img = Image.fromarray(label_np, mode="P")
+    label_img.putpalette(flat_pal_arr)
+
+    # Side by side
+    pred_rgb = pred_img.convert("RGB")
+    label_rgb = label_img.convert("RGB")
+    w, h = pred_rgb.size
+    combined = Image.new("RGB", (w * 2, h))
+    combined.paste(label_rgb, (0, 0))
+    combined.paste(pred_rgb, (w, 0))
+
+    Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+    combined.save(save_path)
+
+
+# ---------------------------------------------------------------------------
 # Evaluate
 # ---------------------------------------------------------------------------
 @torch.no_grad()
@@ -118,10 +178,15 @@ def evaluate(
     flip: bool = True,
     crop_size: Optional[List[int]] = None,
     stride_rate: float = 0.667,
-) -> float:
-    """Run evaluation and return mIoU (%).
+    use_amp: bool = False,
+    class_names: Optional[Sequence[str]] = None,
+    save_vis: bool = False,
+    vis_dir: Optional[str] = None,
+    vis_max: int = 20,
+) -> Dict[str, object]:
+    """Run evaluation and return mIoU (%) and per-class results.
 
-    Supports multi-scale + flip test-time augmentation.
+    Supports multi-scale + flip test-time augmentation and optional AMP.
 
     Args:
         model: DTFormer model.
@@ -133,15 +198,27 @@ def evaluate(
         flip: Whether to apply horizontal flip augmentation.
         crop_size: ``[h, w]`` for sliding window (``None`` = direct).
         stride_rate: Stride as fraction of crop size.
+        use_amp: Whether to use AMP (autocast) during evaluation.
+        class_names: Optional list of class name strings for logging.
+        save_vis: If True, save prediction visualizations.
+        vis_dir: Directory for visualization images (required if save_vis).
+        vis_max: Maximum number of visualizations to save.
 
     Returns:
-        mIoU as a float percentage.
+        Dictionary with keys:
+
+        - ``"miou"``: float, mean IoU percentage.
+        - ``"per_class_iou"``: list of per-class IoU percentages.
+        - ``"macc"``: float, mean pixel accuracy percentage.
+        - ``"per_class_acc"``: list of per-class accuracy percentages.
     """
     model.eval()
     scales = scales or [1.0]
     metrics = Metrics(num_classes, ignore_index, device)
 
-    for batch in dataloader:
+    vis_count = 0
+
+    for batch_idx, batch in enumerate(dataloader):
         rgb = batch["rgb"].to(device, non_blocking=True)
         depth = batch["depth"].to(device, non_blocking=True)
         label = batch["label"].to(device, non_blocking=True)
@@ -162,10 +239,17 @@ def evaluate(
             s_rgb = F.interpolate(rgb, size=(new_H, new_W), mode="bilinear", align_corners=True)
             s_depth = F.interpolate(depth, size=(new_H, new_W), mode="bilinear", align_corners=True)
 
-            logits = _infer_once(
-                model, s_rgb, s_depth, text_feat,
-                crop_size, stride_rate, num_classes,
-            )
+            if use_amp:
+                with torch.autocast(device_type="cuda", dtype=torch.float16):
+                    logits = _infer_once(
+                        model, s_rgb, s_depth, text_feat,
+                        crop_size, stride_rate, num_classes,
+                    )
+            else:
+                logits = _infer_once(
+                    model, s_rgb, s_depth, text_feat,
+                    crop_size, stride_rate, num_classes,
+                )
             logits = F.interpolate(logits, size=(H, W), mode="bilinear", align_corners=True)
             agg_logits += logits.softmax(dim=1)
 
@@ -173,18 +257,54 @@ def evaluate(
             if flip:
                 s_rgb_f = torch.flip(s_rgb, dims=(3,))
                 s_depth_f = torch.flip(s_depth, dims=(3,))
-                logits_f = _infer_once(
-                    model, s_rgb_f, s_depth_f, text_feat,
-                    crop_size, stride_rate, num_classes,
-                )
+
+                if use_amp:
+                    with torch.autocast(device_type="cuda", dtype=torch.float16):
+                        logits_f = _infer_once(
+                            model, s_rgb_f, s_depth_f, text_feat,
+                            crop_size, stride_rate, num_classes,
+                        )
+                else:
+                    logits_f = _infer_once(
+                        model, s_rgb_f, s_depth_f, text_feat,
+                        crop_size, stride_rate, num_classes,
+                    )
                 logits_f = torch.flip(logits_f, dims=(3,))
                 logits_f = F.interpolate(logits_f, size=(H, W), mode="bilinear", align_corners=True)
                 agg_logits += logits_f.softmax(dim=1)
 
         metrics.update(agg_logits, label)
 
+        # Save visualization (first vis_max samples)
+        if save_vis and vis_dir and vis_count < vis_max:
+            pred_cls = agg_logits.argmax(dim=1)  # (B, H, W)
+            for b in range(B):
+                if vis_count >= vis_max:
+                    break
+                save_vis_prediction(
+                    pred_cls[b], label[b],
+                    os.path.join(vis_dir, f"vis_{vis_count:04d}.png"),
+                    ignore_index=ignore_index,
+                )
+                vis_count += 1
+
     # Distributed aggregation
     metrics.reduce()
 
-    _, miou = metrics.compute_iou()
-    return miou
+    per_class_iou, miou = metrics.compute_iou()
+    per_class_acc, macc = metrics.compute_pixel_acc()
+
+    # Log per-class IoU table
+    if class_names is not None:
+        logger.info("Per-class IoU:")
+        for ci, iou_val in enumerate(per_class_iou):
+            name = class_names[ci] if ci < len(class_names) else f"class_{ci}"
+            logger.info(f"  {name:>24s}: {iou_val:.2f}%")
+        logger.info(f"  {'mIoU':>24s}: {miou:.2f}%")
+
+    return {
+        "miou": miou,
+        "per_class_iou": per_class_iou,
+        "macc": macc,
+        "per_class_acc": per_class_acc,
+    }

@@ -16,6 +16,7 @@ import sys
 
 import torch
 import torch.distributed as dist
+import torch.nn as nn
 import yaml
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -26,6 +27,15 @@ def main():
     parser.add_argument("--config", required=True)
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--multi-scale", action="store_true", help="Use MST")
+    parser.add_argument("--amp", action="store_true", default=True,
+                        help="Use AMP during evaluation")
+    parser.add_argument("--no-amp", dest="amp", action="store_false")
+    parser.add_argument("--save-vis", action="store_true",
+                        help="Save prediction visualizations")
+    parser.add_argument("--vis-dir", default=None,
+                        help="Directory for visualizations (default: log_dir/vis)")
+    parser.add_argument("--vis-max", type=int, default=20,
+                        help="Max number of visualizations to save")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -50,6 +60,8 @@ def main():
     eval_cfg = cfg.get("eval", {})
     text_cfg = cfg.get("text", {})
     dataset_cfg = cfg.get("dataset", {})
+    train_cfg = cfg.get("train", {})
+    ckpt_cfg = cfg.get("checkpoint", {})
 
     # Dataset
     from src.dtformer.data.datasets.nyu import NYUDepthv2
@@ -96,13 +108,31 @@ def main():
         decoder_in_index=model_cfg.get("decoder_in_index", [1, 2, 3]),
     ).to(device)
 
+    # BN eps/momentum customization
+    bn_eps = train_cfg.get("bn_eps", 1e-3)
+    bn_momentum = train_cfg.get("bn_momentum", 0.1)
+    from tools.train import _set_bn_params
+    _set_bn_params(model, eps=bn_eps, momentum=bn_momentum)
+
     # Load checkpoint
     from src.dtformer.engine.checkpoint_io import load_checkpoint
     load_checkpoint(args.checkpoint, model)
 
+    # SyncBatchNorm conversion + DDP
     if distributed:
+        model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
         model = torch.nn.parallel.DistributedDataParallel(
             model, device_ids=[local_rank], output_device=local_rank,
+        )
+
+    # Class names
+    class_names = dataset_cfg.get("class_names", None)
+
+    # Visualization directory
+    vis_dir = args.vis_dir
+    if args.save_vis and vis_dir is None:
+        vis_dir = os.path.join(
+            ckpt_cfg.get("log_dir", "checkpoints/run"), "vis",
         )
 
     # Evaluate
@@ -113,7 +143,7 @@ def main():
     else:
         scales = [1.0]
 
-    miou = evaluate(
+    result = evaluate(
         model, val_loader,
         num_classes=model_cfg.get("num_classes", 40),
         device=device,
@@ -121,10 +151,28 @@ def main():
         flip=eval_cfg.get("flip", True),
         crop_size=eval_cfg.get("crop_size"),
         stride_rate=eval_cfg.get("stride_rate", 0.667),
+        use_amp=args.amp,
+        class_names=class_names,
+        save_vis=args.save_vis,
+        vis_dir=vis_dir,
+        vis_max=args.vis_max,
     )
 
     if local_rank == 0:
-        logging.getLogger(__name__).info(f"mIoU: {miou:.2f}%")
+        miou = result["miou"]
+        per_class_iou = result["per_class_iou"]
+        macc = result["macc"]
+
+        logging.getLogger(__name__).info(f"mIoU: {miou:.2f}%  |  mAcc: {macc:.2f}%")
+
+        # Per-class table
+        if per_class_iou is not None:
+            for ci, iou_val in enumerate(per_class_iou):
+                name = class_names[ci] if class_names and ci < len(class_names) else f"class_{ci}"
+                logging.getLogger(__name__).info(f"  {name:>24s}: {iou_val:.2f}%")
+
+        if args.save_vis:
+            logging.getLogger(__name__).info(f"Visualizations saved to {vis_dir}")
 
 
 if __name__ == "__main__":

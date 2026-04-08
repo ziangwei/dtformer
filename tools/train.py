@@ -19,6 +19,7 @@ import sys
 
 import torch
 import torch.distributed as dist
+import torch.nn as nn
 import yaml
 
 # Ensure project root is on path
@@ -54,6 +55,14 @@ def _load_config(path: str) -> dict:
     return cfg
 
 
+def _set_bn_params(model: nn.Module, eps: float = 1e-3, momentum: float = 0.1) -> None:
+    """Set eps and momentum for all BatchNorm layers in the model."""
+    for m in model.modules():
+        if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d, nn.SyncBatchNorm)):
+            m.eps = eps
+            m.momentum = momentum
+
+
 def main():
     parser = argparse.ArgumentParser(description="DTFormer Training")
     parser.add_argument("--config", required=True, help="Experiment config YAML")
@@ -61,6 +70,10 @@ def main():
     parser.add_argument("--amp", action="store_true", default=True, help="Use AMP")
     parser.add_argument("--no-amp", dest="amp", action="store_false")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--torch-compile", action="store_true", default=False,
+                        help="Apply torch.compile() for faster training (PyTorch ≥ 2.0)")
+    parser.add_argument("--no-tensorboard", dest="tensorboard", action="store_false",
+                        default=True, help="Disable TensorBoard logging")
     args = parser.parse_args()
 
     # --- Logging ---
@@ -170,13 +183,28 @@ def main():
         pretrained=model_cfg.get("pretrained"),
     ).to(device)
 
+    # --- BN eps/momentum customization ---
+    bn_eps = train_cfg.get("bn_eps", 1e-3)
+    bn_momentum = train_cfg.get("bn_momentum", 0.1)
+    _set_bn_params(model, eps=bn_eps, momentum=bn_momentum)
+    logging.getLogger(__name__).info(
+        f"BN params: eps={bn_eps}, momentum={bn_momentum}"
+    )
+
+    # --- SyncBatchNorm conversion (before DDP wrapping) ---
     if distributed:
+        model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
+        logging.getLogger(__name__).info("Converted all BN layers to SyncBatchNorm")
+
         model = torch.nn.parallel.DistributedDataParallel(
             model,
             device_ids=[local_rank],
             output_device=local_rank,
             find_unused_parameters=True,
         )
+
+    # --- Class names (for per-class IoU logging) ---
+    class_names = dataset_cfg.get("class_names", None)
 
     # --- Train ---
     from src.dtformer.engine.train_loop import train
@@ -203,6 +231,9 @@ def main():
         eval_stride_rate=eval_cfg.get("stride_rate", 0.667),
         local_rank=local_rank,
         world_size=world_size,
+        torch_compile=args.torch_compile,
+        use_tensorboard=args.tensorboard,
+        class_names=class_names,
     )
 
 

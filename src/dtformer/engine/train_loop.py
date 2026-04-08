@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import time
-from typing import Optional
+from typing import Optional, Sequence
 
 import torch
 import torch.distributed as dist
@@ -72,6 +73,12 @@ def train(
     print_interval: int = 50,
     local_rank: int = 0,
     world_size: int = 1,
+    # torch.compile
+    torch_compile: bool = False,
+    # TensorBoard
+    use_tensorboard: bool = True,
+    # Class names for per-class IoU logging
+    class_names: Optional[Sequence[str]] = None,
 ):
     """Run the full training loop.
 
@@ -79,12 +86,39 @@ def train(
         model: The DTFormer model (already wrapped in DDP if distributed).
         train_loader: Training data loader.
         val_loader: Validation data loader (``None`` to skip eval).
+        torch_compile: If True, apply ``torch.compile()`` to the model for
+            faster training (requires PyTorch ≥ 2.0).
+        use_tensorboard: If True, log scalars to TensorBoard.
+        class_names: Optional list of class name strings for per-class IoU
+            logging.  Length must match ``num_classes``.
         ... (see argument list above)
     """
     device = next(model.parameters()).device
 
+    # --- torch.compile ---
+    if torch_compile:
+        try:
+            model = torch.compile(model)
+            logger.info("Applied torch.compile() to model")
+        except Exception as e:
+            logger.warning(f"torch.compile failed, falling back: {e}")
+
+    # --- TensorBoard ---
+    writer = None
+    if use_tensorboard and local_rank == 0:
+        try:
+            from torch.utils.tensorboard import SummaryWriter
+            os.makedirs(log_dir, exist_ok=True)
+            writer = SummaryWriter(log_dir=os.path.join(log_dir, "tb"))
+            logger.info(f"TensorBoard logging → {log_dir}/tb")
+        except ImportError:
+            logger.warning("tensorboard not installed — skipping TB logging")
+
     # --- Optimizer & Scheduler ---
     raw_model = model.module if hasattr(model, "module") else model
+    # Unwrap compiled model if needed
+    if hasattr(raw_model, "_orig_mod"):
+        raw_model = raw_model._orig_mod
     optimizer = build_optimizer(raw_model, optimizer_name, lr, weight_decay)
 
     iters_per_epoch = len(train_loader)
@@ -154,7 +188,11 @@ def train(
                 nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
                 optimizer.step()
 
-            epoch_loss += loss.item()
+            # Per-iteration all-reduce for accurate logging
+            iter_loss = loss.detach().clone()
+            if world_size > 1:
+                iter_loss = _all_reduce_scalar(iter_loss)
+            epoch_loss += iter_loss.item()
 
             # Logging
             if (idx + 1) % print_interval == 0 and local_rank == 0:
@@ -164,22 +202,26 @@ def train(
                 logger.info(
                     f"Epoch [{epoch}/{epochs}] "
                     f"Iter [{idx + 1}/{iters_per_epoch}] "
-                    f"Loss {loss.item():.4f} (avg {avg:.4f}) "
+                    f"Loss {iter_loss.item():.4f} (avg {avg:.4f}) "
                     f"LR {cur_lr:.2e} "
                     f"ETA {eta_epoch / 60:.1f}min"
                 )
 
+            # TensorBoard per-iteration
+            if writer is not None:
+                writer.add_scalar("train/loss_iter", iter_loss.item(), global_iter)
+                writer.add_scalar("train/lr", cur_lr, global_iter)
+
         # --- Epoch summary ---
         avg_loss = epoch_loss / max(iters_per_epoch, 1)
-        if dist.is_available() and dist.is_initialized():
-            avg_loss_t = torch.tensor(avg_loss, device=device)
-            avg_loss = _all_reduce_scalar(avg_loss_t).item()
 
         if local_rank == 0:
             logger.info(
                 f"Epoch {epoch} done — avg loss {avg_loss:.4f} "
                 f"({time.time() - t0:.0f}s)"
             )
+            if writer is not None:
+                writer.add_scalar("train/loss_epoch", avg_loss, epoch)
 
         # --- Validation ---
         if (
@@ -187,7 +229,7 @@ def train(
             and epoch >= save_start_epoch
             and epoch % eval_interval == 0
         ):
-            miou = evaluate(
+            result = evaluate(
                 model,
                 val_loader,
                 num_classes=num_classes,
@@ -197,10 +239,28 @@ def train(
                 flip=eval_flip,
                 crop_size=eval_crop_size,
                 stride_rate=eval_stride_rate,
+                use_amp=use_amp,
+                class_names=class_names,
             )
+
+            miou = result["miou"]
+            per_class_iou = result["per_class_iou"]
 
             if local_rank == 0:
                 logger.info(f"Epoch {epoch} — mIoU: {miou:.2f}%")
+
+                # Per-class IoU table
+                if per_class_iou is not None:
+                    for ci, iou_val in enumerate(per_class_iou):
+                        name = class_names[ci] if class_names and ci < len(class_names) else f"class_{ci}"
+                        logger.info(f"  {name}: {iou_val:.2f}%")
+
+                if writer is not None:
+                    writer.add_scalar("val/mIoU", miou, epoch)
+                    if per_class_iou is not None:
+                        for ci, iou_val in enumerate(per_class_iou):
+                            name = class_names[ci] if class_names and ci < len(class_names) else f"class_{ci}"
+                            writer.add_scalar(f"val/IoU/{name}", iou_val, epoch)
 
                 if miou > best_miou:
                     best_miou = miou
@@ -226,3 +286,5 @@ def train(
 
     if local_rank == 0:
         logger.info(f"Training finished. Best mIoU: {best_miou:.2f}%")
+        if writer is not None:
+            writer.close()
