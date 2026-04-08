@@ -1,0 +1,51 @@
+# Legacy codebase (reference only, not part of new repo)
+tmp/
+DTFORMER_IMPLEMENTATION_CHECKLIST.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Training artifacts
+*.pth
+*.ckpt
+*.safetensors
+checkpoints/
+logs/
+runs/
+wandb/
+tensorboard/
+
+# Data (too large for git)
+datasets/
+data/
+
+# CLIP cache files
+*.npy
+*.npz
+
+# Misc
+*.log
+.env

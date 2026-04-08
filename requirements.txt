@@ -1,0 +1,16 @@
+torch>=2.0
+torchvision>=0.15
+numpy
+scipy
+opencv-python
+Pillow
+pyyaml
+tqdm
+timm
+tensorboard
+open_clip_torch
+transformers
+accelerate
+safetensors
+sentencepiece
+einops
