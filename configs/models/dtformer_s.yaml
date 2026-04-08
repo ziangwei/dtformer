@@ -2,8 +2,8 @@
 # DTFormer-S 模型配置
 
 model:
-  backbone: DFormerv2_S
-  pretrained: checkpoints/pretrained/DFormerv2_Small_pretrained.pth
+  backbone: DTFormer_S
+  pretrained: checkpoints/pretrained/DTFormer_Small_pretrained.pth
 
   # Backbone architecture
   embed_dims: [64, 128, 256, 512]
@@ -18,14 +18,13 @@ model:
   text_template_set: clip
   max_templates_per_label: 3
 
-  # Semantic alignment: encoder side
-  # Superpower is the default — SSA-lite per-block in backbone
-  sam_enc_stages: [1, 2, 3]   # 0-indexed stages; stage 0 reserved for ablation
+  # TSA-E: encoder-side text alignment (stages 2-4, 0-indexed: 1,2,3)
+  tsae_stages: [1, 2, 3]
 
-  # Semantic alignment: decoder side
-  sam_dec_stages: [1, 2, 3]
-  sam_use_topk: false          # disabled for image_specific mode
-  sam_top_m: 5
+  # TSA-D: decoder-side text alignment (all 3 decoder levels)
+  tsad_stages: [1, 2, 3]
+  tsad_use_topk: false         # disabled for image_specific mode
+  tsad_top_m: 5
 
   # Decoder
   decoder: HSGHead

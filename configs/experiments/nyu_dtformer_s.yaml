@@ -40,4 +40,4 @@ eval:
 checkpoint:
   save_start_epoch: 250
   save_interval: 25
-  log_dir: checkpoints/NYUDepthv2_DFormerv2_S
+  log_dir: checkpoints/NYUDepthv2_DTFormer_S

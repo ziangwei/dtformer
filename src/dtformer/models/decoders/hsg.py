@@ -1,5 +1,5 @@
 """Hierarchical Semantic-Guided (HSG) decoder.
 
-Multi-scale feature fusion with per-layer SAM and Hamburger (NMF) module.
+Multi-scale feature fusion with per-layer TSA-D and Hamburger (NMF) module.
 Final classification head for semantic segmentation.
 """
