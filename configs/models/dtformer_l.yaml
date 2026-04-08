@@ -1,0 +1,36 @@
+# DTFormer-L model configuration
+# DTFormer-L 模型配置
+
+model:
+  backbone: DTFormer_L
+  pretrained: checkpoints/pretrained/DTFormer_Large_pretrained.pth
+  num_classes: 40
+
+  # Backbone architecture
+  embed_dims: [112, 224, 448, 640]
+  depths: [4, 8, 25, 8]
+  num_heads: [7, 7, 14, 20]
+  drop_path_rate: 0.25
+
+  # Text guidance
+  text_dim: 512
+  text_encoder: clip
+  text_encoder_name: null
+  text_template_set: clip
+  max_templates_per_label: 3
+
+  # TSA-E: encoder-side text alignment (stages 2-4, 0-indexed: 1,2,3)
+  tsae_stages: [1, 2, 3]
+
+  # TSA-D: decoder-side text alignment (all 3 decoder levels)
+  tsad_stages: [1, 2, 3]
+  tsad_use_topk: false
+  tsad_top_m: 5
+
+  # Decoder (HSG)
+  decoder: HSGHead
+  decoder_embed_dim: 512
+  decoder_in_index: [1, 2, 3]
+
+  # Auxiliary head
+  aux_rate: 0.0

@@ -4,6 +4,7 @@
 model:
   backbone: DTFormer_S
   pretrained: checkpoints/pretrained/DTFormer_Small_pretrained.pth
+  num_classes: 40
 
   # Backbone architecture
   embed_dims: [64, 128, 256, 512]
@@ -13,8 +14,8 @@ model:
 
   # Text guidance
   text_dim: 512
-  text_encoder: clip           # Only CLIP (via open_clip) is supported
-  text_encoder_name: null      # null -> ViT-B-16 openai
+  text_encoder: clip             # Only CLIP (via open_clip) is supported
+  text_encoder_name: null        # null -> ViT-B-16 openai
   text_template_set: clip
   max_templates_per_label: 3
 
@@ -23,9 +24,13 @@ model:
 
   # TSA-D: decoder-side text alignment (all 3 decoder levels)
   tsad_stages: [1, 2, 3]
-  tsad_use_topk: false         # disabled for image_specific mode
+  tsad_use_topk: false           # disabled for image_specific mode
   tsad_top_m: 5
 
-  # Decoder
+  # Decoder (HSG)
   decoder: HSGHead
   decoder_embed_dim: 512
+  decoder_in_index: [1, 2, 3]   # backbone stages feeding the decoder
+
+  # Auxiliary head
+  aux_rate: 0.0                  # 0 = disabled; set to 0.4 to enable
