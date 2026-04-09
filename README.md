@@ -1,6 +1,6 @@
 # DTFormer
 
-Tri-modal (RGB-Depth-Text) semantic segmentation framework. This repository implements the DTFormer architecture described in the ICML paper, featuring Temperature-Scaled Cosine Attention (TSCA) for text-guided feature alignment at both the encoder (TSA-E) and decoder (TSA-D) stages.
+Tri-modal (RGB-Depth-Text) semantic segmentation framework. DTFormer introduces Temperature-Scaled Cosine Attention (TSCA) for text-guided feature alignment at both the encoder (TSA-E) and decoder (TSA-D) stages.
 
 Built on the DFormerv2 backbone with all OpenMMLab (mmseg / mmcv) dependencies removed.
 
