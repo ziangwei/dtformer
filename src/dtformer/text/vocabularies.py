@@ -43,16 +43,71 @@ SUNRGBD_CLASSES: List[str] = [
 # Used when matching VLM-generated labels back to the dataset vocabulary.
 # ---------------------------------------------------------------------------
 LABEL_ALIASES: Dict[str, str] = {
+    # Spelling normalisation only — never change semantics.
     "refridgerator": "refrigerator",
-    "night stand": "nightstand",
-    "floor mat": "rug",
-    "television": "tv",
-    "books": "book",
-    "clothes": "clothing",
-    "bathtub": "bath tub",
-    "bookshelf": "bookcase",
-    "shelves": "shelf",
+    "nightstand": "night stand",
+    "night_stand": "night stand",
+    "floor_mat": "floor mat",
+    "floormat": "floor mat",
+    "shower_curtain": "shower curtain",
+    "white board": "whiteboard",
 }
+
+# ---------------------------------------------------------------------------
+# VLM normalisation maps: common VLM output variants -> dataset canonical name.
+# Used by generate_tags_*.py to match VLM-generated text back to the
+# official vocabulary.  Keys should be lowercase.
+# ---------------------------------------------------------------------------
+VLM_NORM_MAPS: Dict[str, Dict[str, str]] = {
+    "nyu": {
+        "nightstand": "night stand",
+        "night_stand": "night stand",
+        "floormat": "floor mat",
+        "floor_mat": "floor mat",
+        "tv": "television",
+        "tv monitor": "television",
+        "book shelf": "bookshelf",
+        "bookshelves": "bookshelf",
+        "white board": "whiteboard",
+        "refridgerator": "refrigerator",
+        "shower_curtain": "shower curtain",
+        "closet": "cabinet",
+        "wardrobe": "cabinet",
+        "cloth": "clothes",
+        "couch": "sofa",
+        "book": "books",
+    },
+    "sun": {
+        "nightstand": "night_stand",
+        "night stand": "night_stand",
+        "floormat": "floor_mat",
+        "floor mat": "floor_mat",
+        "television": "tv",
+        "tv monitor": "tv",
+        "refrigerator": "fridge",
+        "fridgerator": "fridge",
+        "book shelf": "bookshelf",
+        "bookshelves": "bookshelf",
+        "white board": "whiteboard",
+        "shower curtain": "shower_curtain",
+        "closet": "cabinet",
+        "wardrobe": "cabinet",
+        "cloth": "clothes",
+        "couch": "sofa",
+        "book": "books",
+    },
+}
+
+
+def get_vlm_norm_map(dataset_key: str) -> Dict[str, str]:
+    """Return the VLM normalisation map for *dataset_key* (``'nyu'`` or ``'sun'``)."""
+    if dataset_key not in VLM_NORM_MAPS:
+        raise KeyError(
+            f"Unknown VLM norm map key '{dataset_key}'. "
+            f"Available: {list(VLM_NORM_MAPS.keys())}"
+        )
+    return VLM_NORM_MAPS[dataset_key]
+
 
 # ---------------------------------------------------------------------------
 # Registry: dataset name -> class list

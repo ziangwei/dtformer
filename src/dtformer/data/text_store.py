@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import torch
 
@@ -84,7 +84,11 @@ class TextStore:
 
     def _load_image_labels_and_lookup(self, path: str) -> None:
         """Load per-image label lists and resolve to indices for vocab lookup."""
-        raw = load_image_labels(path)
+        raw_orig = load_image_labels(path)
+        # Lowercase all keys for case-insensitive matching
+        raw: dict = {}
+        for key, labels in raw_orig.items():
+            raw[key.lower().replace("\\", "/")] = labels
 
         # Normalize and truncate
         max_len = 0
@@ -160,7 +164,8 @@ class TextStore:
         return base.lower()
 
     def _try_lookup_labels(self, key: str) -> Optional[List[str]]:
-        for k in (key, os.path.basename(key), self._canonical_key(key)):
+        # Keys in _image_labels are lowercased on load
+        for k in (key.lower(), os.path.basename(key).lower(), self._canonical_key(key)):
             if k in self._image_labels:
                 return self._image_labels[k]
         return None

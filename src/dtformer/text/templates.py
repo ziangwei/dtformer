@@ -77,27 +77,3 @@ def expand_label_to_prompts(
         else:
             prompts.append(t.format(lbl))
     return prompts
-
-
-def expand_labels_to_prompt_groups(
-    labels: List[str],
-    template_set: str = "clip",
-    max_templates: int = 3,
-) -> List[List[str]]:
-    """Expand a list of labels into prompt groups (one group per label).
-
-    Deduplicates labels while preserving order.
-
-    Returns:
-        ``List[List[str]]`` — outer list has one entry per unique label;
-        inner list contains the template expansions.
-    """
-    seen: set = set()
-    groups: List[List[str]] = []
-    for lb in labels:
-        norm = normalize_label(lb)
-        if norm in seen:
-            continue
-        seen.add(norm)
-        groups.append(expand_label_to_prompts(norm, template_set, max_templates))
-    return groups

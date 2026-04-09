@@ -9,7 +9,7 @@ Internal module — only ``open_clip`` is supported; Jina-CLIP has been removed.
 from __future__ import annotations
 
 import os
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple  # Dict used by _GLOBAL
 
 import torch
 import torch.nn.functional as F
@@ -134,64 +134,6 @@ def encode_texts(
         all_feats.append(feats.cpu())
 
     return torch.cat(all_feats, dim=0).float()
-
-
-def encode_labels(
-    labels: List[str],
-    template_set: str = "clip",
-    max_templates: int = 3,
-    model_name: Optional[str] = None,
-    device: Optional[torch.device] = None,
-) -> Dict[str, torch.Tensor]:
-    """Batch-encode labels with template expansion and per-label averaging.
-
-    Deduplicates labels, expands each through templates, encodes all prompts
-    in one pass, then averages per-label groups.
-
-    Args:
-        labels: Label strings (may contain duplicates).
-        template_set: Template set key (see :mod:`templates`).
-        max_templates: Max templates per label.
-        model_name: CLIP model identifier.
-        device: Target device.
-
-    Returns:
-        ``Dict[normalized_label, Tensor[D]]`` — each value is a mean-pooled,
-        L2-normalised embedding on CPU.
-    """
-    from .templates import expand_label_to_prompts, normalize_label
-
-    # Deduplicate while preserving order
-    seen: set = set()
-    unique: List[str] = []
-    for lb in labels:
-        norm = normalize_label(lb)
-        if norm and norm not in seen:
-            unique.append(norm)
-            seen.add(norm)
-
-    if not unique:
-        return {}
-
-    # Expand all labels → flat prompt list, tracking group boundaries
-    all_prompts: List[str] = []
-    group_sizes: List[int] = []
-    for lb in unique:
-        variants = expand_label_to_prompts(lb, template_set, max_templates)
-        all_prompts.extend(variants)
-        group_sizes.append(len(variants))
-
-    all_embeds = encode_texts(all_prompts, model_name, device)  # [total, D]
-
-    # Average within each label group
-    result: Dict[str, torch.Tensor] = {}
-    idx = 0
-    for lb, gsz in zip(unique, group_sizes):
-        group_feats = all_embeds[idx : idx + gsz]  # [gsz, D]
-        result[lb] = group_feats.mean(dim=0)        # [D]
-        idx += gsz
-
-    return result
 
 
 def encode_vocabulary(

@@ -25,44 +25,78 @@ import yaml
 # Ensure project root is on path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+logger = logging.getLogger(__name__)
 
+
+# ------------------------------------------------------------------
+# Config loading
+# ------------------------------------------------------------------
 def _load_config(path: str) -> dict:
     """Load and merge experiment config (dataset + model + experiment)."""
     with open(path) as f:
         cfg = yaml.safe_load(f)
 
-    base_dir = os.path.dirname(path)
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(path)))
 
-    # Merge referenced configs
     for key in ("dataset_config", "model_config"):
         ref = cfg.pop(key, None)
         if ref:
-            ref_path = ref if os.path.isabs(ref) else os.path.join(
-                os.path.dirname(base_dir), ref,  # relative to project root
-            )
-            # Try relative to the experiment file first, then project root
-            if not os.path.exists(ref_path):
-                ref_path = ref
+            # Try: relative to project root, then as-is
+            candidates = [
+                os.path.join(project_root, ref),
+                ref,
+                os.path.join(os.path.dirname(path), "..", ref),
+            ]
+            ref_path = next((p for p in candidates if os.path.exists(p)), ref)
             with open(ref_path) as f2:
-                sub = yaml.safe_load(f2)
-            # Merge: sub-config provides defaults, experiment overrides
+                sub = yaml.safe_load(f2) or {}
             for sk, sv in sub.items():
                 if sk not in cfg:
                     cfg[sk] = sv
                 elif isinstance(sv, dict) and isinstance(cfg[sk], dict):
-                    merged = {**sv, **cfg[sk]}
-                    cfg[sk] = merged
+                    cfg[sk] = {**sv, **cfg[sk]}
     return cfg
 
 
 def _set_bn_params(model: nn.Module, eps: float = 1e-3, momentum: float = 0.1) -> None:
-    """Set eps and momentum for all BatchNorm layers in the model."""
+    """Set eps and momentum for all BatchNorm layers."""
     for m in model.modules():
         if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d, nn.SyncBatchNorm)):
             m.eps = eps
             m.momentum = momentum
 
 
+# ------------------------------------------------------------------
+# Dataset factory
+# ------------------------------------------------------------------
+def _build_dataset(dataset_cfg: dict, split: str, transform, text_store):
+    """Build dataset by name (NYUDepthv2 / SUNRGBD)."""
+    name = dataset_cfg.get("name", "NYUDepthv2")
+    data_root = dataset_cfg.get("data_root", f"datasets/{name}")
+
+    if "NYU" in name:
+        from src.dtformer.data.datasets.nyu import NYUDepthv2
+        return NYUDepthv2(
+            data_root=data_root,
+            split=split,
+            transform=transform,
+            text_store=text_store,
+        )
+    elif "SUN" in name:
+        from src.dtformer.data.datasets.sunrgbd import SUNRGBD
+        return SUNRGBD(
+            data_root=data_root,
+            split=split,
+            transform=transform,
+            text_store=text_store,
+        )
+    else:
+        raise ValueError(f"Unknown dataset: {name}")
+
+
+# ------------------------------------------------------------------
+# Main
+# ------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="DTFormer Training")
     parser.add_argument("--config", required=True, help="Experiment config YAML")
@@ -71,12 +105,11 @@ def main():
     parser.add_argument("--no-amp", dest="amp", action="store_false")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--torch-compile", action="store_true", default=False,
-                        help="Apply torch.compile() for faster training (PyTorch ≥ 2.0)")
+                        help="Apply torch.compile() (PyTorch >= 2.0)")
     parser.add_argument("--no-tensorboard", dest="tensorboard", action="store_false",
                         default=True, help="Disable TensorBoard logging")
     args = parser.parse_args()
 
-    # --- Logging ---
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -92,8 +125,6 @@ def main():
         torch.cuda.set_device(local_rank)
 
     device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu")
-
-    # --- Seed ---
     torch.manual_seed(args.seed + local_rank)
 
     # --- Config ---
@@ -105,38 +136,24 @@ def main():
     ckpt_cfg = cfg.get("checkpoint", {})
     dataset_cfg = cfg.get("dataset", {})
 
+    # --- Text store ---
+    from src.dtformer.data.text_factory import build_text_store_from_config
+    text_store = build_text_store_from_config(text_cfg, dataset_cfg)
+
     # --- Data ---
-    from src.dtformer.data.datasets.nyu import NYUDepthv2
     from src.dtformer.data.transforms import TrainTransform, ValTransform
     from src.dtformer.data.collate import rgbd_text_collate
-    from src.dtformer.data.text_store import TextStore
 
-    text_mode = text_cfg.get("mode", "fixed")
-    text_store = TextStore(
-        mode=text_mode,
-        vocab_embeds_path=dataset_cfg.get("vocab_embeds_path"),
-        image_embeds_path=dataset_cfg.get("image_embeds_path"),
-        image_labels_path=dataset_cfg.get("image_labels_path"),
-        max_labels=text_cfg.get("max_image_labels", 6),
-    )
-
-    # Dataset paths from dataset config
-    data_root = dataset_cfg.get("root", "data/NYUDepthv2")
-    train_ds = NYUDepthv2(
-        root=data_root,
-        split="train",
-        transform=TrainTransform(
-            crop_size=train_cfg.get("crop_size", [480, 640]),
+    train_ds = _build_dataset(
+        dataset_cfg, "train",
+        TrainTransform(
+            crop_size=tuple(train_cfg.get("crop_size",
+                [dataset_cfg.get("image_height", 480), dataset_cfg.get("image_width", 640)])),
             scale_array=train_cfg.get("scale_array", [0.5, 0.75, 1.0, 1.25, 1.5, 1.75]),
         ),
-        text_store=text_store,
+        text_store,
     )
-    val_ds = NYUDepthv2(
-        root=data_root,
-        split="test",
-        transform=ValTransform(),
-        text_store=text_store,
-    )
+    val_ds = _build_dataset(dataset_cfg, "val", ValTransform(), text_store)
 
     if distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_ds)
@@ -170,7 +187,7 @@ def main():
 
     model = DTFormer(
         backbone=model_cfg.get("backbone", "DTFormer_S"),
-        num_classes=model_cfg.get("num_classes", 40),
+        num_classes=dataset_cfg.get("num_classes", 40),
         text_dim=model_cfg.get("text_dim", 512),
         drop_path_rate=model_cfg.get("drop_path_rate", 0.25),
         decoder_embed_dim=model_cfg.get("decoder_embed_dim", 512),
@@ -183,27 +200,23 @@ def main():
         pretrained=model_cfg.get("pretrained"),
     ).to(device)
 
-    # --- BN eps/momentum customization ---
-    bn_eps = train_cfg.get("bn_eps", 1e-3)
-    bn_momentum = train_cfg.get("bn_momentum", 0.1)
-    _set_bn_params(model, eps=bn_eps, momentum=bn_momentum)
-    logging.getLogger(__name__).info(
-        f"BN params: eps={bn_eps}, momentum={bn_momentum}"
+    # BN eps/momentum
+    _set_bn_params(
+        model,
+        eps=train_cfg.get("bn_eps", 1e-3),
+        momentum=train_cfg.get("bn_momentum", 0.1),
     )
 
-    # --- SyncBatchNorm conversion (before DDP wrapping) ---
+    # SyncBatchNorm + DDP
     if distributed:
         model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
-        logging.getLogger(__name__).info("Converted all BN layers to SyncBatchNorm")
-
+        logger.info("Converted all BN layers to SyncBatchNorm")
         model = torch.nn.parallel.DistributedDataParallel(
-            model,
-            device_ids=[local_rank],
-            output_device=local_rank,
+            model, device_ids=[local_rank], output_device=local_rank,
             find_unused_parameters=True,
         )
 
-    # --- Class names (for per-class IoU logging) ---
+    # Class names for per-class IoU logging
     class_names = dataset_cfg.get("class_names", None)
 
     # --- Train ---
@@ -224,7 +237,7 @@ def main():
         save_start_epoch=ckpt_cfg.get("save_start_epoch", 250),
         save_interval=ckpt_cfg.get("save_interval", 25),
         resume_from=args.resume,
-        num_classes=model_cfg.get("num_classes", 40),
+        num_classes=dataset_cfg.get("num_classes", 40),
         eval_scales=eval_cfg.get("scale_array", [1.0]),
         eval_flip=eval_cfg.get("flip", True),
         eval_crop_size=eval_cfg.get("crop_size"),

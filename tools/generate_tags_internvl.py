@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os, re, json, argparse, logging, glob, time
+import os, re, json, sys, argparse, logging, glob, time
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 from itertools import islice
@@ -15,64 +15,8 @@ from tqdm import tqdm
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# ===== Fixed vocabularies (hard-coded): NYUv2-37 and SUNRGB-D-37 =====
-NYU40 = [
-    "wall","floor","cabinet","bed","chair","sofa","table","door","window","bookshelf",
-    "picture","counter","blinds","desk","shelves","curtain","dresser","pillow","mirror","floor mat",
-    "clothes","ceiling","books","refrigerator","television","paper","towel","shower curtain","box","whiteboard",
-    "person","night stand","toilet","sink","lamp","bathtub","bag","otherstructure","otherfurniture","otherprop"
-]
-AMBIG = {"otherstructure","otherfurniture","otherprop"}
-NYU37 = [c for c in NYU40 if c not in AMBIG]  # NYU 37-class (spaces)
-
-# SUNRGB-D official 37-class list (seg37list.mat)
-SUN37 = [
-    "wall","floor","cabinet","bed","chair","sofa","table","door","window","bookshelf",
-    "picture","counter","blinds","desk","shelves","curtain","dresser","pillow","mirror","floor_mat",
-    "clothes","ceiling","books","fridge","tv","paper","towel","shower_curtain","box","whiteboard",
-    "person","night_stand","toilet","sink","lamp","bathtub","bag"
-]
-
-# Dataset-specific normalization maps (variants -> canonical label under that dataset)
-NORM_MAPS = {
-    "nyu": {
-        "nightstand": "night stand",
-        "night_stand": "night stand",
-        "floormat": "floor mat",
-        "floor_mat": "floor mat",
-        "tv": "television",
-        "tv monitor": "television",
-        "book shelf": "bookshelf",
-        "bookshelves": "bookshelf",
-        "white board": "whiteboard",
-        "refridgerator": "refrigerator",
-        "shower_curtain": "shower curtain",
-        "closet": "cabinet",
-        "wardrobe": "cabinet",
-        "cloth": "clothes",
-        "couch": "sofa",
-        "book": "books",
-    },
-    "sun": {
-        "nightstand": "night_stand",
-        "night stand": "night_stand",
-        "floormat": "floor_mat",
-        "floor mat": "floor_mat",
-        "television": "tv",
-        "tv monitor": "tv",
-        "refrigerator": "fridge",
-        "fridgerator": "fridge",
-        "book shelf": "bookshelf",
-        "bookshelves": "bookshelf",
-        "white board": "whiteboard",
-        "shower curtain": "shower_curtain",
-        "closet": "cabinet",
-        "wardrobe": "cabinet",
-        "cloth": "clothes",
-        "couch": "sofa",
-        "book": "books",
-    }
-}
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from src.dtformer.text.vocabularies import NYU37_CLASSES, SUNRGBD_CLASSES, get_vlm_norm_map
 
 # ====== 稳健解析：优先JSON；否则按标签表做“子串+边界”匹配，支持多词 ======
 def normalize_label(s: str) -> str:
@@ -211,15 +155,15 @@ def load_model_tokenizer(model_id: str):
 def main():
     args = parse_args()
 
-    # Dataset-specific labels and normalization
+    # Dataset-specific labels and normalization (from central vocabularies.py)
     global NORM_MAP
     if args.dataset == 'nyu':
-        LABELS_CANON = NYU37
-        NORM_MAP = NORM_MAPS['nyu']
+        LABELS_CANON = list(NYU37_CLASSES)
+        NORM_MAP = get_vlm_norm_map('nyu')
         default_img_folder = 'RGB'
     else:
-        LABELS_CANON = SUN37
-        NORM_MAP = NORM_MAPS['sun']
+        LABELS_CANON = list(SUNRGBD_CLASSES)
+        NORM_MAP = get_vlm_norm_map('sun')
         default_img_folder = 'image'
 
     # we will match on normalized labels but output canonical

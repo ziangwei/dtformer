@@ -64,14 +64,12 @@ Before training, pre-compute the CLIP text embeddings (only needed once per data
 ```bash
 # NYU vocabulary embeddings
 python tools/build_clip_cache.py \
-    --dataset nyu \
-    --data-root datasets/NYUDepthv2 \
+    --dataset NYUDepthv2 \
     --output datasets/NYUDepthv2/cache/vocab_embeds.pt
 
 # SUNRGBD vocabulary embeddings
 python tools/build_clip_cache.py \
-    --dataset sunrgbd \
-    --data-root datasets/SUNRGBD \
+    --dataset SUNRGBD \
     --output datasets/SUNRGBD/cache/vocab_embeds.pt
 ```
 
@@ -145,7 +143,15 @@ SAVE_VIS=1 CHECKPOINT=checkpoints/.../best.pth bash scripts/eval.sh
 ## Inference (Single Image)
 
 ```bash
+# Default (uses text config from experiment YAML)
 RGB=demo/rgb.jpg DEPTH=demo/depth.png CHECKPOINT=checkpoints/.../best.pth bash scripts/infer.sh
+
+# Override text mode from CLI
+python tools/infer.py --config configs/experiments/nyu_dtformer_s.yaml \
+    --checkpoint checkpoints/.../best.pth \
+    --rgb demo/rgb.jpg --depth demo/depth.png \
+    --text-mode image_specific \
+    --labels wall floor table chair
 ```
 
 Output: a palette-colored PNG prediction map.

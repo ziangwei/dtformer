@@ -94,24 +94,8 @@ def main():
     ckpt_cfg = cfg.get("checkpoint", {})
 
     # --- Text store ---
-    from src.dtformer.data.text_store import TextStore
-    data_root = dataset_cfg.get("data_root", "datasets/NYUDepthv2")
-
-    # Resolve paths relative to data_root
-    vocab_embeds_path = dataset_cfg.get("vocab_embeds")
-    if vocab_embeds_path and not os.path.isabs(vocab_embeds_path):
-        vocab_embeds_path = os.path.join(data_root, vocab_embeds_path)
-
-    image_labels_path = dataset_cfg.get("image_labels_json")
-    if image_labels_path and not os.path.isabs(image_labels_path):
-        image_labels_path = os.path.join(data_root, image_labels_path)
-
-    text_store = TextStore(
-        text_mode=text_cfg.get("mode", "fixed"),
-        vocab_embeds_path=vocab_embeds_path,
-        image_labels_path=image_labels_path,
-        max_labels=text_cfg.get("max_image_labels", 6),
-    )
+    from src.dtformer.data.text_factory import build_text_store_from_config
+    text_store = build_text_store_from_config(text_cfg, dataset_cfg)
 
     # --- Dataset ---
     from src.dtformer.data.transforms import ValTransform

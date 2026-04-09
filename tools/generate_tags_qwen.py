@@ -5,6 +5,7 @@ import os
 import re
 import json
 import glob
+import sys
 import argparse
 import logging
 from pathlib import Path
@@ -18,23 +19,14 @@ from transformers import AutoProcessor, Qwen3VLMoeForConditionalGeneration
 
 
 # ----------------------------
-# Dataset port & fixed vocabs
+# Dataset vocabularies (from central definitions)
 # ----------------------------
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from src.dtformer.text.vocabularies import NYU37_CLASSES, SUNRGBD_CLASSES
 
 VOCABS: Dict[str, Sequence[str]] = {
-    "NYUDv2_40": [
-        "wall","floor","cabinet","bed","chair","sofa","table","door","window","bookshelf",
-        "picture","counter","blinds","desk","shelves","curtain","dresser","pillow","mirror","floor mat",
-        "clothes","ceiling","books","refrigerator","television","paper","towel","shower curtain","box","whiteboard",
-        "person","night stand","toilet","sink","lamp","bathtub","bag"
-    ],
-    # Placeholder for future dataset port (leave empty for now)
-    "SUNRGBD_PORT": [
-        "wall","floor","cabinet","bed","chair","sofa","table","door","window","bookshelf",
-        "picture","counter","blinds","desk","shelves","curtain","dresser","pillow","mirror","floor_mat",
-        "clothes","ceiling","books","fridge","tv","paper","towel","shower_curtain","box","whiteboard",
-        "person","night_stand","toilet","sink","lamp","bathtub","bag"
-    ]
+    "NYUDv2_40": list(NYU37_CLASSES),
+    "SUNRGBD_PORT": list(SUNRGBD_CLASSES),
 }
 
 PROMPT_TEMPLATE = (
