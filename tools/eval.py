@@ -21,6 +21,36 @@ import yaml
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+logger = logging.getLogger(__name__)
+
+
+# ------------------------------------------------------------------
+# Dataset factory (mirrors tools/train.py)
+# ------------------------------------------------------------------
+def _build_dataset(dataset_cfg: dict, split: str, transform, text_store):
+    """Build dataset by name (NYUDepthv2 / SUNRGBD)."""
+    name = dataset_cfg.get("name", "NYUDepthv2")
+    data_root = dataset_cfg.get("data_root", f"datasets/{name}")
+
+    if "NYU" in name:
+        from src.dtformer.data.datasets.nyu import NYUDepthv2
+        return NYUDepthv2(
+            data_root=data_root,
+            split=split,
+            transform=transform,
+            text_store=text_store,
+        )
+    elif "SUN" in name:
+        from src.dtformer.data.datasets.sunrgbd import SUNRGBD
+        return SUNRGBD(
+            data_root=data_root,
+            split=split,
+            transform=transform,
+            text_store=text_store,
+        )
+    else:
+        raise ValueError(f"Unknown dataset: {name}")
+
 
 def main():
     parser = argparse.ArgumentParser(description="DTFormer Evaluation")
@@ -63,26 +93,31 @@ def main():
     train_cfg = cfg.get("train", {})
     ckpt_cfg = cfg.get("checkpoint", {})
 
-    # Dataset
-    from src.dtformer.data.datasets.nyu import NYUDepthv2
-    from src.dtformer.data.transforms import ValTransform
-    from src.dtformer.data.collate import rgbd_text_collate
+    # --- Text store ---
     from src.dtformer.data.text_store import TextStore
+    data_root = dataset_cfg.get("data_root", "datasets/NYUDepthv2")
+
+    # Resolve paths relative to data_root
+    vocab_embeds_path = dataset_cfg.get("vocab_embeds")
+    if vocab_embeds_path and not os.path.isabs(vocab_embeds_path):
+        vocab_embeds_path = os.path.join(data_root, vocab_embeds_path)
+
+    image_labels_path = dataset_cfg.get("image_labels_json")
+    if image_labels_path and not os.path.isabs(image_labels_path):
+        image_labels_path = os.path.join(data_root, image_labels_path)
 
     text_store = TextStore(
-        mode=text_cfg.get("mode", "fixed"),
-        vocab_embeds_path=dataset_cfg.get("vocab_embeds_path"),
-        image_embeds_path=dataset_cfg.get("image_embeds_path"),
-        image_labels_path=dataset_cfg.get("image_labels_path"),
+        text_mode=text_cfg.get("mode", "fixed"),
+        vocab_embeds_path=vocab_embeds_path,
+        image_labels_path=image_labels_path,
         max_labels=text_cfg.get("max_image_labels", 6),
     )
 
-    val_ds = NYUDepthv2(
-        root=dataset_cfg.get("root", "data/NYUDepthv2"),
-        split="test",
-        transform=ValTransform(),
-        text_store=text_store,
-    )
+    # --- Dataset ---
+    from src.dtformer.data.transforms import ValTransform
+    from src.dtformer.data.collate import rgbd_text_collate
+
+    val_ds = _build_dataset(dataset_cfg, "val", ValTransform(), text_store)
 
     val_sampler = (
         torch.utils.data.distributed.DistributedSampler(val_ds, shuffle=False)
@@ -93,11 +128,11 @@ def main():
         num_workers=2, pin_memory=True, collate_fn=rgbd_text_collate,
     )
 
-    # Model
+    # --- Model ---
     from src.dtformer.models.segmentors.dtformer import DTFormer
     model = DTFormer(
         backbone=model_cfg.get("backbone", "DTFormer_S"),
-        num_classes=model_cfg.get("num_classes", 40),
+        num_classes=dataset_cfg.get("num_classes", 40),
         text_dim=model_cfg.get("text_dim", 512),
         drop_path_rate=model_cfg.get("drop_path_rate", 0.25),
         decoder_embed_dim=model_cfg.get("decoder_embed_dim", 512),
@@ -109,10 +144,12 @@ def main():
     ).to(device)
 
     # BN eps/momentum customization
-    bn_eps = train_cfg.get("bn_eps", 1e-3)
-    bn_momentum = train_cfg.get("bn_momentum", 0.1)
     from tools.train import _set_bn_params
-    _set_bn_params(model, eps=bn_eps, momentum=bn_momentum)
+    _set_bn_params(
+        model,
+        eps=train_cfg.get("bn_eps", 1e-3),
+        momentum=train_cfg.get("bn_momentum", 0.1),
+    )
 
     # Load checkpoint
     from src.dtformer.engine.checkpoint_io import load_checkpoint
@@ -135,7 +172,7 @@ def main():
             ckpt_cfg.get("log_dir", "checkpoints/run"), "vis",
         )
 
-    # Evaluate
+    # --- Evaluate ---
     from src.dtformer.engine.eval_loop import evaluate
 
     if args.multi_scale:
@@ -145,7 +182,7 @@ def main():
 
     result = evaluate(
         model, val_loader,
-        num_classes=model_cfg.get("num_classes", 40),
+        num_classes=dataset_cfg.get("num_classes", 40),
         device=device,
         scales=scales,
         flip=eval_cfg.get("flip", True),
@@ -163,16 +200,16 @@ def main():
         per_class_iou = result["per_class_iou"]
         macc = result["macc"]
 
-        logging.getLogger(__name__).info(f"mIoU: {miou:.2f}%  |  mAcc: {macc:.2f}%")
+        logger.info(f"mIoU: {miou:.2f}%  |  mAcc: {macc:.2f}%")
 
         # Per-class table
         if per_class_iou is not None:
             for ci, iou_val in enumerate(per_class_iou):
                 name = class_names[ci] if class_names and ci < len(class_names) else f"class_{ci}"
-                logging.getLogger(__name__).info(f"  {name:>24s}: {iou_val:.2f}%")
+                logger.info(f"  {name:>24s}: {iou_val:.2f}%")
 
         if args.save_vis:
-            logging.getLogger(__name__).info(f"Visualizations saved to {vis_dir}")
+            logger.info(f"Visualizations saved to {vis_dir}")
 
 
 if __name__ == "__main__":

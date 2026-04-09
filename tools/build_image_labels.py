@@ -35,6 +35,8 @@ logger = logging.getLogger(__name__)
 
 # NYU-specific: IDs to skip (0=unlabelled, 38/39/40="other*" in 1-indexed)
 NYU_SKIP_IDS = {0, 38, 39, 40}
+# SUNRGBD: only 0=unlabelled to skip
+SUNRGBD_SKIP_IDS = {0}
 
 
 def extract_labels_nyu(
@@ -75,6 +77,42 @@ def extract_labels_nyu(
     return result
 
 
+def extract_labels_sunrgbd(
+    data_root: str,
+    class_names: list[str],
+    top_k: int = 5,
+) -> dict[str, list[str]]:
+    """Extract per-image label lists from SUNRGBD label PNGs."""
+    label_dir = os.path.join(data_root, "labels")  # lowercase for SUNRGBD
+    result: dict[str, list[str]] = {}
+
+    for fname in sorted(os.listdir(label_dir)):
+        if not fname.endswith(".png"):
+            continue
+        path = os.path.join(label_dir, fname)
+        label_img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+        if label_img is None:
+            continue
+
+        # Count pixel occurrences per class (1-indexed)
+        unique, counts = np.unique(label_img, return_counts=True)
+        pairs = []
+        for uid, cnt in zip(unique.tolist(), counts.tolist()):
+            if uid in SUNRGBD_SKIP_IDS:
+                continue
+            idx = uid - 1  # 1-indexed -> 0-indexed
+            if 0 <= idx < len(class_names):
+                pairs.append((class_names[idx], cnt))
+
+        pairs.sort(key=lambda x: x[1], reverse=True)
+        labels = [name for name, _ in pairs[:top_k]]
+
+        key = f"RGB/{fname.replace('.png', '.jpg')}"
+        result[key] = labels
+
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Extract per-image label lists from segmentation masks."
@@ -91,6 +129,8 @@ def main() -> None:
 
     if "NYU" in args.dataset:
         labels = extract_labels_nyu(args.data_root, class_names, args.top_k)
+    elif "SUN" in args.dataset:
+        labels = extract_labels_sunrgbd(args.data_root, class_names, args.top_k)
     else:
         raise NotImplementedError(f"Dataset {args.dataset} not supported yet")
 

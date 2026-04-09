@@ -1,29 +1,29 @@
-# SUN RGB-D dataset configuration
-# SUN RGB-D 数据集配置
+# NYU Depth v2 dataset configuration
+# NYU Depth v2 数据集配置
 
 dataset:
-  name: SUNRGBD
-  num_classes: 37
+  name: NYUDepthv2
+  num_classes: 40
   ignore_index: 255
-  data_root: datasets/SUNRGBD
+  data_root: datasets/NYUDepthv2
 
   # File paths
   rgb_dir: RGB
   depth_dir: Depth
-  label_dir: labels          # 注意: SUNRGBD 用小写 "labels"
+  label_dir: Label
   rgb_format: .jpg
   depth_format: .png
   label_format: .png
   train_split: train.txt
   val_split: test.txt
 
-  # Dataset size
-  num_train: 5285
-  num_val: 5050
+  # Dataset size (for niters_per_epoch calculation)
+  num_train: 795
+  num_val: 654
 
-  # Input dimensions (SUNRGBD padded to square)
+  # Input dimensions
   image_height: 480
-  image_width: 480
+  image_width: 640
 
   # Normalization
   rgb_mean: [0.485, 0.456, 0.406]
@@ -35,7 +35,7 @@ dataset:
   gt_remap: true
 
   # Text prior files (relative to data_root)
-  label_txt: sunrgbd37_labels.txt
+  label_txt: nyu40_labels.txt
   image_labels_json: image_labels.json
 
   # Vocabulary embedding cache (relative to data_root)

@@ -40,8 +40,7 @@ datasets/
 │   ├── nyu40_labels.txt      # 40 class names, one per line
 │   ├── image_labels.json     # Per-image text labels (from VLM)
 │   └── cache/
-│       ├── vocab_embeds.pt   # CLIP embeddings for full vocabulary
-│       └── image_embeds.pt   # CLIP embeddings for image-specific labels
+│       └── vocab_embeds.pt   # CLIP embeddings for full vocabulary
 │
 └── SUNRGBD/
     ├── RGB/                  # RGB images (.jpg)
@@ -52,8 +51,7 @@ datasets/
     ├── sunrgbd37_labels.txt  # 37 class names
     ├── image_labels.json
     └── cache/
-        ├── vocab_embeds.pt
-        └── image_embeds.pt
+        └── vocab_embeds.pt
 ```
 
 NYUDepthv2: 795 train / 654 test, 40 classes, 480 x 640.
@@ -64,19 +62,20 @@ SUNRGBD: 5285 train / 5050 test, 37 classes, 480 x 480.
 Before training, pre-compute the CLIP text embeddings (only needed once per dataset):
 
 ```bash
-# Fixed vocabulary embeddings
+# NYU vocabulary embeddings
 python tools/build_clip_cache.py \
     --dataset nyu \
     --data-root datasets/NYUDepthv2 \
     --output datasets/NYUDepthv2/cache/vocab_embeds.pt
 
-# Image-specific label embeddings
+# SUNRGBD vocabulary embeddings
 python tools/build_clip_cache.py \
-    --dataset nyu \
-    --data-root datasets/NYUDepthv2 \
-    --image-labels datasets/NYUDepthv2/image_labels.json \
-    --output datasets/NYUDepthv2/cache/image_embeds.pt
+    --dataset sunrgbd \
+    --data-root datasets/SUNRGBD \
+    --output datasets/SUNRGBD/cache/vocab_embeds.pt
 ```
+
+For `image_specific` text mode, the per-image label list (`image_labels.json`) is looked up at runtime against the vocabulary embedding table — no separate per-image embedding cache is needed.
 
 ### Generate Image Labels with VLM (Optional)
 
