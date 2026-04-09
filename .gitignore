@@ -38,9 +38,9 @@ runs/
 wandb/
 tensorboard/
 
-# Data (too large for git)
-datasets/
-data/
+# Data (too large for git) — only the top-level datasets/ folder
+/datasets/
+/data/
 
 # CLIP cache files
 *.npy

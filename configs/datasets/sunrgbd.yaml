@@ -1,0 +1,43 @@
+# SUN RGB-D dataset configuration
+# SUN RGB-D 数据集配置
+
+dataset:
+  name: SUNRGBD
+  num_classes: 37
+  ignore_index: 255
+  data_root: datasets/SUNRGBD
+
+  # File paths
+  rgb_dir: RGB
+  depth_dir: Depth
+  label_dir: labels          # 注意: SUNRGBD 用小写 "labels"
+  rgb_format: .jpg
+  depth_format: .png
+  label_format: .png
+  train_split: train.txt
+  val_split: test.txt
+
+  # Dataset size
+  num_train: 5285
+  num_val: 5050
+
+  # Input dimensions (SUNRGBD padded to square)
+  image_height: 480
+  image_width: 480
+
+  # Normalization
+  rgb_mean: [0.485, 0.456, 0.406]
+  rgb_std: [0.229, 0.224, 0.225]
+  depth_mean: [0.48, 0.48, 0.48]
+  depth_std: [0.28, 0.28, 0.28]
+
+  # Ground truth: 1-indexed in PNG, subtract 1 at load time
+  gt_remap: true
+
+  # Text prior files (relative to data_root)
+  label_txt: sunrgbd37_labels.txt
+  image_labels_json: image_labels.json
+
+  # Vocabulary embedding cache (relative to data_root)
+  vocab_embeds: cache/vocab_embeds.pt
+  image_embeds: cache/image_embeds.pt

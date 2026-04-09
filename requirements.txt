@@ -1,21 +1,21 @@
-# Core
-torch>=2.0
-torchvision>=0.15
+# Core (install PyTorch separately via conda, see README)
+# torch>=2.0
+# torchvision>=0.15
 numpy
 scipy
 opencv-python
 Pillow
 pyyaml
 tqdm
-timm
+timm>=0.9
 tensorboard
 einops
 
 # CLIP text encoding
-open_clip_torch
+open_clip_torch>=2.20
 
 # VLM label generation (tools/generate_tags_*.py)
-transformers
+transformers>=4.37
 accelerate
 safetensors
 sentencepiece
