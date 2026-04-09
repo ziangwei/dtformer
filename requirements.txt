@@ -1,3 +1,4 @@
+# Core
 torch>=2.0
 torchvision>=0.15
 numpy
@@ -8,9 +9,16 @@ pyyaml
 tqdm
 timm
 tensorboard
+einops
+
+# CLIP text encoding
 open_clip_torch
+
+# VLM label generation (tools/generate_tags_*.py)
 transformers
 accelerate
 safetensors
 sentencepiece
-einops
+
+# Visualization (research/visualization/)
+matplotlib
