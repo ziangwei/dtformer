@@ -278,6 +278,7 @@ class DTFormerEncoder(nn.Module):
         # Text / TSA-E config
         text_dim: int = 512,
         tsae_stages: Sequence[int] = (1, 2, 3),
+        tsae_share_factors: Optional[Sequence[int]] = None,
         tsae_gamma_scale: float = 1.0,
         tsae_logit_init: float = 1.0,
     ):
@@ -293,10 +294,18 @@ class DTFormerEncoder(nn.Module):
         self.patch_embed = PatchEmbed(in_chans=3, embed_dim=embed_dims[0])
 
         # TSA-E block sharing factors per stage (Table 9)
-        self._tsae_share_factors = [
-            self._resolve_share_factor(depths[i], embed_dims[i])
-            for i in range(self.num_layers)
-        ]
+        # Prefer explicit config; fall back to heuristic if not provided.
+        if tsae_share_factors is not None:
+            assert len(tsae_share_factors) == self.num_layers, (
+                f"tsae_share_factors length ({len(tsae_share_factors)}) != "
+                f"num_layers ({self.num_layers})"
+            )
+            self._tsae_share_factors = list(tsae_share_factors)
+        else:
+            self._tsae_share_factors = [
+                self._resolve_share_factor(depths[i], embed_dims[i])
+                for i in range(self.num_layers)
+            ]
 
         # Stochastic depth schedule
         dpr = [

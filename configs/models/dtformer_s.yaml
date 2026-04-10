@@ -10,7 +10,7 @@ model:
   embed_dims: [64, 128, 256, 512]
   depths: [3, 4, 18, 4]
   num_heads: [4, 4, 8, 16]
-  drop_path_rate: 0.25
+  drop_path_rate: 0.25          # NYU default; SUNRGBD experiments override to 0.2
 
   # Text guidance
   text_dim: 512
@@ -21,6 +21,7 @@ model:
 
   # TSA-E: encoder-side text alignment (stages 2-4, 0-indexed: 1,2,3)
   tsae_stages: [1, 2, 3]
+  tsae_share_factors: [2, 2, 4, 2]   # Table 9: blocks sharing one TSA-E per stage
 
   # TSA-D: decoder-side text alignment (all 3 decoder levels)
   tsad_stages: [1, 2, 3]

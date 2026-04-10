@@ -19,14 +19,20 @@ from transformers import AutoProcessor, Qwen3VLMoeForConditionalGeneration
 
 
 # ----------------------------
-# Dataset vocabularies (from central definitions)
+# VLM candidate label space (from central vocabulary definitions)
 # ----------------------------
+# NOTE: The segmentation task uses all classes (NYU=40, SUNRGBD=37), but the
+# VLM candidate label space deliberately excludes ambiguous categories that a
+# VLM should never generate:
+#   - NYU: 40 segmentation classes → 37 VLM candidates
+#     (excluded: otherstructure, otherfurniture, otherprop)
+#   - SUNRGBD: 37 segmentation classes = 37 VLM candidates (no exclusion)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.dtformer.text.vocabularies import NYU37_CLASSES, SUNRGBD_CLASSES
 
-VOCABS: Dict[str, Sequence[str]] = {
-    "NYUDv2_40": list(NYU37_CLASSES),
-    "SUNRGBD_PORT": list(SUNRGBD_CLASSES),
+VLM_CANDIDATE_VOCABS: Dict[str, Sequence[str]] = {
+    "nyu_vlm37": list(NYU37_CLASSES),     # 37 VLM candidates (40 seg classes minus 3 "other*")
+    "sunrgbd_vlm37": list(SUNRGBD_CLASSES),  # 37 VLM candidates = 37 seg classes
 }
 
 PROMPT_TEMPLATE = (
@@ -177,9 +183,9 @@ def parse_args():
     # NEW but aligned with your request: limit number of labels (also enforced in prompt)
     ap.add_argument("--max_labels", type=int, default=5,
                     help="Maximum number of labels per image (prompt + post-filter)")
-    ap.add_argument("--dataset_port", type=str, default="NYUDv2_40",
-                    choices=list(VOCABS.keys()),
-                    help="Which dataset vocabulary to use")
+    ap.add_argument("--dataset_port", type=str, default="nyu_vlm37",
+                    choices=list(VLM_CANDIDATE_VOCABS.keys()),
+                    help="VLM candidate label space (see script header for seg-vs-VLM class counts)")
     return ap.parse_args()
 
 
@@ -191,9 +197,9 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     logging.info(f"Active dataset port: {ACTIVE_DATASET_PORT}")
 
-    vocab = VOCABS.get(ACTIVE_DATASET_PORT, [])
+    vocab = VLM_CANDIDATE_VOCABS.get(ACTIVE_DATASET_PORT, [])
     if not vocab:
-        logging.warning("Active vocabulary is empty. Please fill VOCABS[ACTIVE_DATASET_PORT] before running.")
+        logging.warning("Active vocabulary is empty. Please check VLM_CANDIDATE_VOCABS keys.")
 
     # Discover images
     img_paths = load_images(args.dataset_dir, args.image_folder)

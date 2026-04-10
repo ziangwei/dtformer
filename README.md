@@ -37,7 +37,6 @@ datasets/
 │   ├── Label/                # Semantic labels (.png, 1-indexed, 0 = unlabeled)
 │   ├── train.txt             # Training split (one filename stem per line)
 │   ├── test.txt              # Test split
-│   ├── nyu40_labels.txt      # 40 class names, one per line
 │   ├── image_labels.json     # Per-image text labels (from VLM)
 │   └── cache/
 │       └── vocab_embeds.pt   # CLIP embeddings for full vocabulary
@@ -48,7 +47,6 @@ datasets/
     ├── labels/               # Semantic labels (.png) — 注意小写
     ├── train.txt
     ├── test.txt
-    ├── sunrgbd37_labels.txt  # 37 class names
     ├── image_labels.json
     └── cache/
         └── vocab_embeds.pt
@@ -77,7 +75,7 @@ For `image_specific` text mode, the per-image label list (`image_labels.json`) i
 
 ### Generate Image Labels with VLM (Optional)
 
-If you need to generate per-image text labels from scratch using a VLM:
+If you need to generate per-image text labels from scratch using a VLM. The VLM candidate label space uses 37 classes for both datasets: NYU excludes 3 ambiguous "other*" categories from the 40 segmentation classes, while SUNRGBD uses all 37 segmentation classes directly.
 
 ```bash
 # InternVL3
@@ -86,15 +84,16 @@ python tools/generate_tags_internvl.py \
     --dataset_dir datasets/NYUDepthv2 \
     --output_file image_labels_internvl.json
 
-# Qwen3-VL
+# Qwen3-VL (--dataset_port: nyu_vlm37 or sunrgbd_vlm37)
 python tools/generate_tags_qwen.py \
     --dataset_dir datasets/NYUDepthv2 \
+    --dataset_port nyu_vlm37 \
     --output_file image_labels_qwen.json
 
 # Take intersection of multiple VLM outputs
 python tools/merge_image_labels.py \
-    datasets/NYUDepthv2/image_labels_internvl.json \
-    datasets/NYUDepthv2/image_labels_qwen.json \
+    --inputs datasets/NYUDepthv2/image_labels_internvl.json \
+             datasets/NYUDepthv2/image_labels_qwen.json \
     --output datasets/NYUDepthv2/image_labels.json
 ```
 
@@ -104,8 +103,11 @@ python tools/merge_image_labels.py \
 # Default: NYU + DTFormer-S, 2 GPUs
 bash scripts/train.sh
 
-# Custom config and GPU count
+# DTFormer-B on NYU, 4 GPUs
 GPUS=4 CONFIG=configs/experiments/nyu_dtformer_b.yaml bash scripts/train.sh
+
+# DTFormer-S on SUNRGBD
+CONFIG=configs/experiments/sunrgbd_dtformer_s.yaml bash scripts/train.sh
 
 # Resume from checkpoint
 RESUME=checkpoints/NYUDepthv2_DTFormer_S/epoch-300.pth bash scripts/train.sh
@@ -158,13 +160,15 @@ Output: a palette-colored PNG prediction map.
 
 ## Model Variants
 
-| Variant | Params | FLOPs | Config |
-|---------|--------|-------|--------|
-| DTFormer-S | ~25M | ~40G | `configs/models/dtformer_s.yaml` |
-| DTFormer-B | ~48M | ~80G | `configs/models/dtformer_b.yaml` |
-| DTFormer-L | ~85M | ~161G | `configs/models/dtformer_l.yaml` |
+| Variant | Params | FLOPs | decoder_embed_dim | TSA-E Share Factors | Config |
+|---------|--------|-------|-------------------|---------------------|--------|
+| DTFormer-S | ~25M | ~40G | 512 | [2, 2, 4, 2] | `configs/models/dtformer_s.yaml` |
+| DTFormer-B | ~48M | ~80G | 512 | [2, 2, 4, 2] | `configs/models/dtformer_b.yaml` |
+| DTFormer-L | ~85M | ~161G | 1024 | [2, 2, 8, 4] | `configs/models/dtformer_l.yaml` |
 
-All variants use TSA-E at encoder stages 1/2/3 and TSA-D at all decoder levels by default. Stage 0 is reserved for ablation (set `tsae_stages: [0,1,2,3]` in config to enable).
+All variants use TSA-E at encoder stages 1/2/3 and TSA-D at all decoder levels by default. Stage 0 is reserved for ablation (set `tsae_stages: [0,1,2,3]` in config to enable). TSA-E share factors (Table 9) are explicitly configured per model variant; a heuristic fallback is used if omitted.
+
+Note: `drop_path_rate` differs between datasets — model configs store the NYU default (S=0.25, B/L=0.3); SUNRGBD experiment configs override to 0.2. SUNRGBD also uses 300 epochs (vs NYU 500) and multi-scale evaluation by default.
 
 ## Project Structure
 
@@ -173,7 +177,7 @@ dtformer/
 ├── configs/                    # YAML configuration files
 │   ├── datasets/               #   Dataset definitions (NYU, SUNRGBD)
 │   ├── models/                 #   Model architecture (S / B / L)
-│   └── experiments/            #   Training recipes (dataset + model + hyperparams)
+│   └── experiments/            #   Training recipes (NYU/SUNRGBD × S/B/L)
 ├── src/dtformer/               # Core library
 │   ├── data/                   #   Datasets, transforms, collate, text store
 │   ├── text/                   #   CLIP backend, templates, vocabularies, cache I/O

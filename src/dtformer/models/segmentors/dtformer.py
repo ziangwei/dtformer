@@ -78,6 +78,7 @@ class DTFormer(nn.Module):
         decoder_embed_dim: int = 512,
         # TSA config
         tsae_stages: Sequence[int] = (1, 2, 3),
+        tsae_share_factors: Optional[Sequence[int]] = None,
         tsad_stages: Sequence[int] = (1, 2, 3),
         tsad_use_topk: bool = False,
         tsad_top_m: int = 5,
@@ -103,11 +104,14 @@ class DTFormer(nn.Module):
         self.aux_rate = aux_rate
 
         # --- Encoder ---
-        self.backbone = _BACKBONE_REGISTRY[backbone](
+        encoder_kwargs = dict(
             text_dim=text_dim,
             drop_path_rate=drop_path_rate,
             tsae_stages=list(tsae_stages),
         )
+        if tsae_share_factors is not None:
+            encoder_kwargs["tsae_share_factors"] = list(tsae_share_factors)
+        self.backbone = _BACKBONE_REGISTRY[backbone](**encoder_kwargs)
 
         # --- Decoder (HSG) ---
         dec_in_index = list(decoder_in_index)

@@ -1,9 +1,9 @@
-# Experiment: SUNRGBD + DTFormer-S + image_specific + CLIP
-# 实验配置：SUNRGBD + DTFormer-S
+# Experiment: SUNRGBD + DTFormer-B + image_specific + CLIP
+# 实验配置：SUNRGBD + DTFormer-B
 
 # Inherit dataset and model configs
 dataset_config: configs/datasets/sunrgbd.yaml
-model_config: configs/models/dtformer_s.yaml
+model_config: configs/models/dtformer_b.yaml
 
 # Model overrides (SUNRGBD uses lower drop_path than NYU)
 model:
@@ -44,4 +44,4 @@ eval:
 checkpoint:
   save_start_epoch: 180
   save_interval: 25
-  log_dir: checkpoints/SUNRGBD_DTFormer_S
+  log_dir: checkpoints/SUNRGBD_DTFormer_B

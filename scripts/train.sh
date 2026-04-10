@@ -2,7 +2,7 @@
 # DTFormer 训练启动脚本
 # Usage:
 #   bash scripts/train.sh                              # 默认: NYU + DTFormer-S, 2 GPUs
-#   GPUS=4 CONFIG=configs/experiments/nyu_dtformer_b.yaml bash scripts/train.sh
+#   GPUS=4 CONFIG=configs/experiments/nyu_dtformer_s.yaml bash scripts/train.sh
 #   GPUS=1 CUDA_VISIBLE_DEVICES=0 bash scripts/train.sh   # 单卡调试
 
 set -euo pipefail

@@ -1,13 +1,9 @@
-# Experiment: SUNRGBD + DTFormer-S + image_specific + CLIP
-# 实验配置：SUNRGBD + DTFormer-S
+# Experiment: NYUDepthv2 + DTFormer-B + image_specific + CLIP
+# 实验配置：NYU + DTFormer-B
 
 # Inherit dataset and model configs
-dataset_config: configs/datasets/sunrgbd.yaml
-model_config: configs/models/dtformer_s.yaml
-
-# Model overrides (SUNRGBD uses lower drop_path than NYU)
-model:
-  drop_path_rate: 0.2
+dataset_config: configs/datasets/nyu.yaml
+model_config: configs/models/dtformer_b.yaml
 
 # Text mode
 text:
@@ -20,10 +16,10 @@ train:
   lr: 6.0e-5
   lr_power: 0.9
   weight_decay: 0.01
-  batch_size: 16
-  epochs: 300
+  batch_size: 8                # smaller than S due to larger model
+  epochs: 500
   warmup_epochs: 10
-  num_workers: 2
+  num_workers: 4
   scale_array: [0.5, 0.75, 1.0, 1.25, 1.5, 1.75]
 
   # BN settings
@@ -35,13 +31,13 @@ train:
 
 # Evaluation
 eval:
-  scale_array: [0.5, 0.75, 1.0, 1.25, 1.5]
+  scale_array: [1.0]           # [0.75, 1.0, 1.25] for multi-scale
   flip: true
-  crop_size: [480, 480]        # SUNRGBD: square
+  crop_size: [480, 640]        # [height, width]
   stride_rate: 0.667
 
 # Checkpointing
 checkpoint:
-  save_start_epoch: 180
+  save_start_epoch: 250
   save_interval: 25
-  log_dir: checkpoints/SUNRGBD_DTFormer_S
+  log_dir: checkpoints/NYUDepthv2_DTFormer_B

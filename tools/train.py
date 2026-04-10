@@ -192,6 +192,7 @@ def main():
         drop_path_rate=model_cfg.get("drop_path_rate", 0.25),
         decoder_embed_dim=model_cfg.get("decoder_embed_dim", 512),
         tsae_stages=model_cfg.get("tsae_stages", [1, 2, 3]),
+        tsae_share_factors=model_cfg.get("tsae_share_factors", None),
         tsad_stages=model_cfg.get("tsad_stages", [1, 2, 3]),
         tsad_use_topk=model_cfg.get("tsad_use_topk", False),
         tsad_top_m=model_cfg.get("tsad_top_m", 5),

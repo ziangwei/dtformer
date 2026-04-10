@@ -90,10 +90,11 @@ def main():
     # --- Get text features ---
     text_mode = text_cfg.get("mode", "fixed")
     if args.labels:
-        # CLI labels: manually build embedding from vocab lookup
-        from src.dtformer.text.templates import normalize_label
-        normed = [normalize_label(lb) for lb in args.labels]
-        text_feat, text_names = text_store._labels_to_padded_embeds(normed)
+        # CLI labels → public embed_labels API (respects --max-labels)
+        max_k = args.max_labels or text_cfg.get("max_image_labels", 6)
+        text_feat, text_names = text_store.embed_labels(
+            args.labels, max_labels=max_k,
+        )
         text_feat = text_feat.unsqueeze(0)  # (1, K, D)
     else:
         # Standard: use TextStore query API
@@ -115,6 +116,7 @@ def main():
         text_dim=model_cfg.get("text_dim", 512),
         decoder_embed_dim=model_cfg.get("decoder_embed_dim", 512),
         tsae_stages=model_cfg.get("tsae_stages", [1, 2, 3]),
+        tsae_share_factors=model_cfg.get("tsae_share_factors", None),
         tsad_stages=model_cfg.get("tsad_stages", [1, 2, 3]),
         decoder_in_index=model_cfg.get("decoder_in_index", [1, 2, 3]),
     ).to(device)

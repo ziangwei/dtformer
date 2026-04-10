@@ -150,6 +150,45 @@ class TextStore:
         pad = self._pad_len or 1
         return torch.zeros(pad, self.text_dim), []
 
+    def embed_labels(
+        self,
+        labels: List[str],
+        max_labels: int = 0,
+    ) -> Tuple[torch.Tensor, List[str]]:
+        """Look up *labels* in the vocab table and return padded embeddings.
+
+        This is the **public** interface for ad-hoc / CLI-supplied label
+        lists (as opposed to ``get_text_features`` which resolves per-image
+        keys from a pre-loaded JSON).
+
+        Args:
+            labels: Raw label strings (will be normalised internally).
+            max_labels: Pad/truncate to this length.  0 = use ``self.max_labels``.
+
+        Returns:
+            ``(features, names)`` — ``features`` is ``Tensor[K, D]``.
+        """
+        normed = []
+        seen: set = set()
+        for lb in labels:
+            n = normalize_label(lb)
+            if n and n not in seen:
+                normed.append(n)
+                seen.add(n)
+
+        k = max_labels if max_labels > 0 else (self.max_labels or len(normed))
+        normed = normed[:k]
+
+        if not normed or self._vocab_embeds is None:
+            return torch.zeros(max(k, 1), self.text_dim), normed
+
+        # Temporarily override _pad_len so _labels_to_padded_embeds honours k
+        saved = self._pad_len
+        self._pad_len = k
+        feats, names = self._labels_to_padded_embeds(normed)
+        self._pad_len = saved
+        return feats, names
+
     # ------------------------------------------------------------------
     # Key matching helpers (handles path format mismatch)
     # ------------------------------------------------------------------

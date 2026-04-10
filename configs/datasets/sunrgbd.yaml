@@ -35,7 +35,9 @@ dataset:
   gt_remap: true
 
   # Text prior files (relative to data_root)
-  label_txt: sunrgbd37_labels.txt
+  # Class names are defined in src/dtformer/text/vocabularies.py (SUNRGBD_CLASSES).
+  # label_txt is NOT used at runtime — kept only as optional external reference.
+  # label_txt: sunrgbd37_labels.txt
   image_labels_json: image_labels.json
 
   # Vocabulary embedding cache (relative to data_root)
